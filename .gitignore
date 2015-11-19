@@ -1,5 +1,5 @@
 # configuration
-config/
+config/config.yaml
 
 # intellij files
 Prometheus.iml
