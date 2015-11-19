@@ -1,6 +1,9 @@
+import time
 import numpy as np
 import os
+import sys
 from sklearn import svm
+from scipy.spatial.distance import cdist
 
 def merge(arrays, idx_to_omit):
     """
@@ -13,7 +16,7 @@ def merge(arrays, idx_to_omit):
     :return: merged np.array.
     """
 
-    result = np.array(arrays[0:idx_to_omit] + arrays[idx_to_omit+1:0])
+    result = np.array(arrays[0:idx_to_omit] + arrays[idx_to_omit+1:])
     result.shape = (result.shape[0] * result.shape[1], result.shape[2])
     return result
 
@@ -21,6 +24,7 @@ def merge(arrays, idx_to_omit):
 # location of data
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
 
+print("Loading data", end='')
 # load the data into a numpy array.
 with open(os.path.join(DATA_DIR, 'training.csv'), 'r') as training_file:
     data_rows = training_file.readlines()
@@ -36,8 +40,8 @@ all_train_data = np.zeros((N, D))
 # weight vector
 all_train_weights = np.zeros((N, 1))
 
-# label vector. We'll keep this as a regular list.
-all_train_labels = []
+# label vector.
+all_train_labels = np.zeros((N, 1), dtype=str)
 
 # process the rows, and fill up the data and labels. Ignore the first row.
 for i, row in enumerate(data_rows[1:]):
@@ -50,22 +54,35 @@ for i, row in enumerate(data_rows[1:]):
     all_train_weights[i] = values[-2]
 
     # the label is in the last column
-    all_train_labels.append(values[-1])
+    all_train_labels[i] = values[-1]
+
+    # show some progress
+    if i > 0 and i % 10000 == 0:
+        print('.', end='')
+        sys.stdout.flush()
+
+print('done')
 
 # Train svm.
-kernel = 'precomputed'
+kernel = 'sigmoid'
 n_folds = 25
 
 # size of the data used for training.
 M = N - (N / n_folds)
 
+
+if kernel == 'precomputed':
+    print('kernalizing...', end='')
+    s = 0.1
+    all_data_gram = np.exp(-cdist(all_train_data, all_train_data) / (2 * s ** 2))
+    print('done')
+    split_train_data = np.array_split(all_data_gram, n_folds)
+else:
+    split_train_data = np.array_split(all_train_data, n_folds)
+
 # split the data in n_folds chunks.
-split_train_data = np.array_split(all_train_data, n_folds)
 split_train_weights = np.array_split(all_train_weights, n_folds)
 split_train_labels = np.array_split(all_train_labels, n_folds)
-
-
-
 
 # each chunk will be used as a test vector
 for i, test_data in enumerate(split_train_data):
@@ -77,5 +94,15 @@ for i, test_data in enumerate(split_train_data):
     train_weights = merge(split_train_weights, idx_to_omit=i)
     train_labels = merge(split_train_labels, idx_to_omit=i)
 
-    classifier = svm.SVC()
-    classifier.fit(train_data, train_labels)
+    classifier = svm.SVC(kernel=kernel)
+    print(classifier)
+    st_time = time.time()
+    print('fold number {} out of {}'.format(i, n_folds))
+    print('fitting...', end='')
+    classifier.fit(train_data, train_labels.flat)
+    print('elapsed training time: '.format(time.time() - st_time))
+
+    # compare to test_data
+    predicted_labels = classifier.predict(test_data)
+    num_correct = np.sum(predicted_labels == test_labels.flat)
+    print('num errors: {}'.format(num_correct))
