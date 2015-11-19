@@ -1,5 +1,8 @@
-Icon
+# configuration
+config/
 
 # intellij files
 Prometheus.iml
 .idea
+
+Icon
