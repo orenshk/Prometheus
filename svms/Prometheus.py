@@ -63,7 +63,7 @@ for i, row in enumerate(data_rows[1:]):
 
 print('done')
 
-# Train svm.
+# Train svm. SVC's default kernel is rbf.
 kernel = 'sigmoid'
 n_folds = 25
 
@@ -99,6 +99,7 @@ for i, test_data in enumerate(split_train_data):
     st_time = time.time()
     print('fold number {} out of {}'.format(i, n_folds))
     print('fitting...', end='')
+    sys.stdout.flush()
     classifier.fit(train_data, train_labels.flat)
     print('elapsed training time: '.format(time.time() - st_time))
 
@@ -106,3 +107,4 @@ for i, test_data in enumerate(split_train_data):
     predicted_labels = classifier.predict(test_data)
     num_correct = np.sum(predicted_labels == test_labels.flat)
     print('num errors: {}'.format(num_correct))
+    sys.stdout.flush()
