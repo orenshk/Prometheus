@@ -71,6 +71,9 @@ n_folds = 25
 M = N - (N / n_folds)
 
 
+# SVC has built-in support for sigmoid, rbf, linear, and polynomial kernels. We can make our own by using precomputed.
+# The caveat is that we have to figure out how to hold a 250000 x 250000 kernel matrix in memory. The code below
+# doesn't work on an 8gb machine.
 if kernel == 'precomputed':
     print('kernalizing...', end='')
     s = 0.1
