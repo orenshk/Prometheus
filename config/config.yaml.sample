@@ -1,4 +1,7 @@
 email:
-  service: gmail
   username: me@gmail.com
   password: abcd1234
+
+pushbullet:
+  api_key: d3cSGQRaj29tjasdTAae7ZXKUXae123874
+  channel: prometheus

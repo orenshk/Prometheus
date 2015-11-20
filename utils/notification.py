@@ -1,11 +1,21 @@
 import smtplib
+import os
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import os
+from pushbullet import Pushbullet
+from utils.config import config_from_file
 
-def email(from_addr, to_addrs, subject, body, username, password, service='gmail'):
+def push_note(subject, body):
+    config = config_from_file(key='pushbullet')
+    pb = Pushbullet(api_key=config['api_key'])
+    for channel in pb.channels:
+        if channel.channel_tag == config['channel']:
+            channel.push_note(subject, body)
+
+def email(to_addrs, subject, body, service='gmail'):
+    config = config_from_file(key='gmail')
     if service == 'gmail':
-        _gmail(from_addr, to_addrs, subject, body, password)
+        _gmail(gmail_addr=config['username'], to_addrs=to_addrs, subject=subject, body=body, password=config['password'])
     else:
         print('Unsupported mail service {}'.format(service))
 

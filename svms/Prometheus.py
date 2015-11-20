@@ -5,7 +5,7 @@ import sys
 import argparse
 from sklearn import svm
 from scipy.spatial.distance import cdist
-from utils.notification import email
+from utils.notification import email, push_note
 from utils.config import config_from_file
 
 def merge(arrays, idx_to_omit):
@@ -27,6 +27,7 @@ if __name__ == '__main__':
     parser.add_argument('--email', nargs='*', default='')
     parser.add_argument('--n_folds', type=int, default=25)
     parser.add_argument('--data_file', default='training.csv')
+    parser.add_argument('--push', action='store_true')
 
     args = parser.parse_args()
 
@@ -112,7 +113,7 @@ if __name__ == '__main__':
         print('fitting...', end='')
         sys.stdout.flush()
         classifier.fit(train_data, train_labels.flat, sample_weight=train_weights.flat)
-        print('elapsed training time: '.format(time.time() - st_time))
+        print('elapsed training time: {}'.format(time.time() - st_time))
 
         # compare to test_data
         predicted_labels = classifier.predict(test_data)
@@ -123,15 +124,16 @@ if __name__ == '__main__':
         # notify by email
         if args.email:
             # get config
-            config = config_from_file()['email']
             subject = 'fold number {} out of {}. kernel: {}, accuracy: {}'.format(i,
                                                                                   n_folds,
                                                                                   kernel,
                                                                                   num_correct / len(test_labels))
-            email(from_addr=config['username'],
-                  to_addrs=args.email,
-                  subject=subject,
-                  body='',
-                  username=config['username'],
-                  password=config['password'],
-                  service=config['service'])
+            email(to_addrs=args.email, subject=subject, body='')
+
+        if args.push:
+            subject = 'training fold done'
+            body = 'fold number {} out of {}. kernel: {}, accuracy: {}'.format(i,
+                                                                                  n_folds,
+                                                                                  kernel,
+                                                                                  num_correct / len(test_labels))
+            push_note(subject, body)
