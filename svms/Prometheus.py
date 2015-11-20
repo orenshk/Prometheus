@@ -104,13 +104,14 @@ if __name__ == '__main__':
 
         classifier = svm.SVC(kernel=kernel,
                              cache_size=2000,  # size of kernel cache. Bigger is faster but takes more RAM.
+                             C=1,  # When weights are used, this will be rescaled to C * weight[i] for sample i.
                              )
         print(classifier)
         st_time = time.time()
         print('fold number {} out of {}'.format(i, n_folds))
         print('fitting...', end='')
         sys.stdout.flush()
-        classifier.fit(train_data, train_labels.flat)
+        classifier.fit(train_data, train_labels.flat, sample_weight=train_weights.flat)
         print('elapsed training time: '.format(time.time() - st_time))
 
         # compare to test_data
