@@ -102,7 +102,9 @@ if __name__ == '__main__':
         train_weights = merge(split_train_weights, idx_to_omit=i)
         train_labels = merge(split_train_labels, idx_to_omit=i)
 
-        classifier = svm.SVC(kernel=kernel)
+        classifier = svm.SVC(kernel=kernel,
+                             cache_size=2000,  # size of kernel cache. Bigger is faster but takes more RAM.
+                             )
         print(classifier)
         st_time = time.time()
         print('fold number {} out of {}'.format(i, n_folds))
