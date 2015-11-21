@@ -80,7 +80,8 @@ if __name__ == '__main__':
     # no need to save the test weights. Right?
     test_data = test_data[:, 0:-1]
 
-    classifier = GridSearchCV(svm.SVC(), parameters, cv=3, fit_params={'sample_weight': train_weights.flat})
+    classifier = GridSearchCV(svm.SVC(cache_size=2500), parameters, cv=3, fit_params={'sample_weight': train_weights.flat})
+    print('starting search. This may be a while...')
     classifier.fit(train_data, train_labels.flat)
 
     # best parameters
