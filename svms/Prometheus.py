@@ -1,4 +1,3 @@
-import time
 import numpy as np
 import os
 import sys
@@ -8,8 +7,8 @@ from sklearn import svm
 from sklearn.grid_search import GridSearchCV
 from sklearn.cross_validation import train_test_split
 from sklearn.metrics import classification_report
-from scipy.spatial.distance import cdist
 from utils.notification import email, push_note
+
 
 def merge(arrays, idx_to_omit):
     """
@@ -73,7 +72,6 @@ if __name__ == '__main__':
 
     parameters = [{'kernel': ['rbf'], 'gamma': [1e-3, 1e-4], 'C': [1, 10, 100, 1e3]},
                   {'kernel': ['sigmoid'], 'gamma': [1e-3, 1e-4], 'C': [1, 10, 100, 1e3], 'coef0': [0, 1]}]
-
 
     # separate out the weights.
     train_weights = train_data[:, -1]
