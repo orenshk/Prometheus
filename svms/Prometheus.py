@@ -70,8 +70,9 @@ if __name__ == '__main__':
     # we're going to use grid search to find best parameters.
     train_data, test_data, train_labels, test_labels = train_test_split(all_data, all_labels, test_size=args.test_size)
 
-    parameters = [{'kernel': ['rbf'], 'gamma': [1e-3, 1e-4], 'C': [1, 10, 100, 1e3]},
-                  {'kernel': ['sigmoid'], 'gamma': [1e-3, 1e-4], 'C': [1, 10, 100, 1e3], 'coef0': [0, 1]}]
+    parameters = [{'kernel': ['rbf'], 'gamma': np.logspace(-5, -3.2), 'C': [100, 1e3, 1e4, 1e5]},
+                  # {'kernel': ['sigmoid'], 'gamma': np.logspace(-3, 3), 'C': [1, 10, 100, 1e3], 'coef0': [0, 1]}
+                  ]
 
     # separate out the weights.
     train_weights = train_data[:, -1]
@@ -80,15 +81,18 @@ if __name__ == '__main__':
     # no need to save the test weights. Right?
     test_data = test_data[:, 0:-1]
 
-    classifier = GridSearchCV(svm.SVC(cache_size=2500), parameters, cv=3, fit_params={'sample_weight': train_weights.flat})
+    classifier = GridSearchCV(svm.SVC(cache_size=2500),
+                              parameters,
+                              cv=3,
+                              fit_params={'sample_weight': train_weights.flat},
+                              verbose=True)
+
     print('starting search. This may be a while...')
     classifier.fit(train_data, train_labels.flat)
 
     # best parameters
-    print('best parameters: {}'.format(classifier.best_params_))
-
-    for params, mean_score, scores in classifier.grid_scores_:
-        print('{:.3f} (+/-{:.03f}) for {}'.format(mean_score, scores.std() * 2, params))
+    subject = 'best parameters: {} with score: {}'.format(classifier.best_params_, classifier.best_score_)
+    print(subject)
 
     print('classification report')
     report = classification_report(y_true=test_labels, y_pred=classifier.predict(test_data))
@@ -96,11 +100,13 @@ if __name__ == '__main__':
 
     if args.email:
         body = report
-        email(to_addrs=args.email, subject='prometheus done training', body=report)
+        email(to_addrs=args.email, subject=subject, body=report)
 
     if args.push:
-        push_note(subject='prometheus done training', body=report)
+        push_note(subject=subject, body=report)
 
     # save the classifier.
-    with open('classifier-{}.dat'.format(classifier.best_params_), 'wb') as f:
-        pickle.dump(classifier, f, protocol=3)
+    best_params = classifier.best_params_
+    param_str = '_'.join(['{}={}'.format(x, best_params[x]) for x in sorted(best_params.keys())])
+    with open('classifier-{}.dat'.format(param_str), 'wb') as f:
+        pickle.dump(classifier.best_estimator_, f, protocol=3)
