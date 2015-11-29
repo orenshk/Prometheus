@@ -71,6 +71,7 @@ if __name__ == '__main__':
             sys.stdout.flush()
 
     print('done')
+    sys.stdout.flush()
 
     # we're going to use grid search to find best parameters.
     train_data, test_data, train_labels, test_labels = train_test_split(all_data, all_labels, test_size=args.test_size)
@@ -111,6 +112,7 @@ if __name__ == '__main__':
                              cache_size=args.cache_size,
                              max_iter=int(args.max_iter))
         print('training svm')
+        sys.stdout.flush()
         start_time = time.time()
         classifier.fit(train_data, train_labels.flat, sample_weight=train_weights.flat)
         elapsed = time.time() - start_time
