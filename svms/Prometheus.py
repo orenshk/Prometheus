@@ -117,18 +117,22 @@ if __name__ == '__main__':
         classifier.fit(train_data, train_labels.flat, sample_weight=train_weights.flat)
         elapsed = time.time() - start_time
         subject = ('Done training SVM in {:.3f} minutes on {} samples '
-                   'with parameters C={} and gamma={} '
-                   'score: {}').format(elapsed / 60.0, train_data.shape[0],
-                                       opt_C,
-                                       opt_gamma,
-                                       classifier.score(test_data, test_labels.flat))
+                   'with parameters C={} and gamma={}'.format(elapsed / 60.0, train_data.shape[0],
+                                                              opt_C,
+                                                              opt_gamma))
+        # it's possible that no test vector was created, if user chose test_size to be 0.0
+        if test_data.any():
+            subject += ' score: {}'.format(classifier.score(test_data, test_labels.flat))
         param_str = 'C={}_gamma={}_kernel=rbf'.format(opt_C, opt_gamma)
         best_classifier = classifier
 
     print(subject)
-    print('classification report')
-    report = classification_report(y_true=test_labels, y_pred=classifier.predict(test_data))
-    print(report)
+    if test_data.any():
+        print('classification report')
+        report = classification_report(y_true=test_labels, y_pred=classifier.predict(test_data))
+        print(report)
+    else:
+        report = ''
 
     if args.email:
         body = report
