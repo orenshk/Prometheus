@@ -5,6 +5,10 @@ config/config.yaml
 Prometheus.iml
 .idea
 
+# python
+*.pyc
+
 __pycache__
 
-Icon
+Icon
+

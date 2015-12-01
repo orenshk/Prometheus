@@ -15,7 +15,7 @@ def get_next_batch(batch_size, data):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='Prometheus neural net using TensorFlow')
     parser.add_argument('--email', nargs='*', default='')
-    parser.add_argument('--test_size', type=float, default=0.5)
+    parser.add_argument('--test_size', type=float, default=0.1)
     parser.add_argument('--data_file', default='training.csv')
     parser.add_argument('--push', action='store_true')
     parser.add_argument('--epoch', default=1000, type=int)
@@ -25,7 +25,7 @@ if __name__ == '__main__':
 
     train_data, test_data, train_weights, train_labels, test_labels = load_data(args.data_file, args.test_size, one_of_k=True)
 
-    x = tf.placeholder("float", [None, 30])
+    x = tf.placeholder('float', [None, 30])
     W = tf.Variable(tf.zeros([30, 2]))
     b = tf.Variable(tf.zeros([2]))
 
@@ -38,14 +38,15 @@ if __name__ == '__main__':
     sess = tf.Session()
     sess.run(tf.initialize_all_variables())
 
-    for i in range(args.epoch):
-        # setup generators
-        batch_train_data = get_next_batch(100, train_data)
-        batch_train_labels = get_next_batch(100, train_labels)
-        for batchx, batchy in zip(batch_train_data, batch_train_labels):
-            sess.run(train_step, feed_dict={x: batchx, y_: batchy})
+    batch_train_data = get_next_batch(100, train_data)
+    batch_train_labels = get_next_batch(100, train_labels)
+    for batchx, batchy in zip(batch_train_data, batch_train_labels):
+        sess.run(train_step, feed_dict={x: batchx, y_: batchy})
+        break
 
     correct_prediction = tf.equal(tf.argmax(y, 1), tf.argmax(y_, 1))
+    print(sess.run(y, feed_dict={x: test_data}))
+    print(sess.run(correct_prediction, feed_dict={x: test_data, y_: test_labels}))
     accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
 
     print(sess.run(accuracy, feed_dict={x: test_data, y_: test_labels}))
