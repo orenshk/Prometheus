@@ -1,7 +1,9 @@
+from __future__ import print_function
 import pickle
 import os
 import sys
 import numpy as np
+from sklearn.cross_validation import train_test_split
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
 
@@ -11,7 +13,19 @@ def load_classifier(file_path):
         return pickle.load(f)
 
 
-def load_data(data_file):
+def load_data(data_file, test_size, one_of_k=False):
+    """
+    Load the data from data_file and split it into training set and test set. The test size is a fraction of the set.
+    :param one_of_k: return labels as 1-of-k vectors
+    :param data_file: name of data file. Assumed to be in DATA_DIR
+    :param test_size: float, proprtion of data to be used for test.
+    :return: tuple containing:
+        train_data: ndarray of shape N * (1 - test_size) by D
+        test_data: ndarray of shape test_size * N by D
+        test_weights: ndarray of shape N * (1 - test_size) by 1
+        train_labels: ndarray of shape N * (1 - test_size) by 1
+        test_labels: ndarray of shape test_size * N by 1
+    """
 
     print("Loading data", end='')
     # load the data into a numpy array.
@@ -27,7 +41,10 @@ def load_data(data_file):
     data = np.zeros((N, D))
 
     # label vector.
-    labels = np.zeros((N, 1), dtype=str)
+    if one_of_k:
+        labels = np.zeros((N, 2), dtype=float)
+    else:
+        labels = np.zeros((N, 1), dtype=str)
 
     # process the rows, and fill up the data and labels. Ignore the first row.
     for i, row in enumerate(data_rows[1:]):
@@ -35,7 +52,13 @@ def load_data(data_file):
 
         data[i] = values[1:-1]
 
-        labels[i] = values[-1]
+        if one_of_k:
+            if values[-1] == 's':
+                labels[i] = np.array([1, 0])
+            else:
+                labels[i] = np.array([0, 1])
+        else:
+            labels[i] = values[-1]
 
         # show some progress
         if i > 0 and i % 10000 == 0:
@@ -44,4 +67,15 @@ def load_data(data_file):
 
     print('done')
     sys.stdout.flush()
-    return data, labels
+
+    # we're going to use grid search to find best parameters.
+    train_data, test_data, train_labels, test_labels = train_test_split(data, labels, test_size=test_size)
+
+    # separate out the weights.
+    train_weights = train_data[:, -1]
+    train_data = train_data[:, 0:-1]
+
+    # no need to save the test weights. Right?
+    test_data = test_data[:, 0:-1]
+
+    return train_data, test_data, train_weights, train_labels, test_labels

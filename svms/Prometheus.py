@@ -6,7 +6,6 @@ import pickle
 import time
 from sklearn import svm
 from sklearn.grid_search import GridSearchCV
-from sklearn.cross_validation import train_test_split
 from sklearn.metrics import classification_report
 from utils.notification import email, push_note
 from utils import load_data
@@ -24,17 +23,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    all_data, all_labels = load_data(args.data_file)
-
-    # we're going to use grid search to find best parameters.
-    train_data, test_data, train_labels, test_labels = train_test_split(all_data, all_labels, test_size=args.test_size)
-
-    # separate out the weights.
-    train_weights = train_data[:, -1]
-    train_data = train_data[:, 0:-1]
-
-    # no need to save the test weights. Right?
-    test_data = test_data[:, 0:-1]
+    train_data, test_data, train_weights, train_labels, test_labels = load_data(args.data_file, args.test_size)
 
     if args.gridsearch:
         parameters = [{'kernel': ['rbf'], 'gamma': np.logspace(-5, -3.2), 'C': [100, 1e3, 1e4, 1e5]},
@@ -96,4 +85,4 @@ if __name__ == '__main__':
 
     # save the classifier.
     with open('classifier-{}.dat'.format(param_str), 'wb') as f:
-        pickle.dump(best_classifier, f, protocol=3)
+        pickle.dump(best_classifier, f)
