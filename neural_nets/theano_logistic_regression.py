@@ -4,13 +4,14 @@ import gzip
 import theano as th
 import theano.tensor as T
 import numpy as np
-import cPickle
+import pickle
 import timeit
 from utils import load_data
 
 
 class LogisticRegression(object):
-    def __init__(self, input_data, n_in, n_out):
+    def __init__(self, input_data, n_in, n_out, cost=None):
+
         # initialize the weights
         self.W = th.shared(
             value=np.zeros((n_in, n_out), dtype=th.config.floatX),
@@ -25,16 +26,27 @@ class LogisticRegression(object):
             borrow='True'
         )
 
+        # inpud data for the regression. This is x.
         self.input = input_data
 
+        # as always, we do softmax over the Wx + b.
         self.p_y_given_x = T.nnet.softmax(T.dot(self.input, self.W) + self.b)
 
+        # and choose the class with the largest probability.
         self.y_pred = T.argmax(self.p_y_given_x, axis=1)
 
         self.params = [self.W, self.b]
 
+        self.cost = cost or self.negative_log_likelihood
+
     def negative_log_likelihood(self, y):
-        return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        """
+        A negative log likelihood cost function.
+
+        :param y: set of true labels.
+        :return: the negative log likelihood of y
+        """
+        return -T.mean(T.log(self.p_y_given_x[T.arange(y.shape[0]), y]))
 
     def errors(self, y):
         assert y.dtype.startswith('int')
@@ -49,10 +61,10 @@ def load_mnist_data():
     data_loc = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                             'data',
                             'MNIST_data',
-                            'mnist.pkl.gz')
+                            'mnist.pkl3.gz')
 
     with gzip.open(data_loc, 'rb') as f:
-        train_set, valid_set, test_set = cPickle.load(f)
+        train_set, valid_set, test_set = pickle.load(f)
 
     test_set_x, test_set_y = load_shared_dataset(test_set)
     valid_set_x, valid_set_y = load_shared_dataset(valid_set)
@@ -121,8 +133,8 @@ def do_training(learning_rate, n_epochs, batch_size,
                 train_set_x, train_set_y, valid_set_x, valid_set_y, num_classes=10):
 
     # compute number of minibatches for training, validation and testing
-    n_train_batches = train_set_x.get_value(borrow=True).shape[0] / batch_size
-    n_valid_batches = valid_set_x.get_value(borrow=True).shape[0] / batch_size
+    n_train_batches = int(train_set_x.get_value(borrow=True).shape[0] / batch_size)
+    n_valid_batches = int(valid_set_x.get_value(borrow=True).shape[0] / batch_size)
 
     # get dimensionality and number of classes.
     dim = train_set_x.get_value(borrow=True).shape[1]
@@ -176,11 +188,11 @@ def do_training(learning_rate, n_epochs, batch_size,
     global_iter_num = 0
     while epoch < n_epochs and not done_looping:
         epoch += 1
-        for minibatch_index in xrange(n_train_batches):
+        for minibatch_index in range(n_train_batches):
             train_model(minibatch_index)
 
             if (global_iter_num + 1) % validation_frequency == 0:
-                validation_losses = [validate_model(i) for i in xrange(n_valid_batches)]
+                validation_losses = [validate_model(i) for i in range(n_valid_batches)]
                 this_validation_loss = np.mean(validation_losses)
 
                 print(
@@ -198,7 +210,7 @@ def do_training(learning_rate, n_epochs, batch_size,
 
                     # save the best model
                     with open('best_model.pkl', 'wb') as f:
-                        cPickle.dump(classifier, f)
+                        pickle.dump(classifier, f)
 
             if patience <= global_iter_num:
                 done_looping = True
