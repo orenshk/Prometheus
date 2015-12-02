@@ -1,3 +1,4 @@
+theano
 appnope==0.1.0
 decorator==4.0.2
 gnureadline==6.3.3
