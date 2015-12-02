@@ -5,6 +5,7 @@ import theano.tensor as T
 import numpy as np
 import cPickle
 import timeit
+from utils import load_data
 
 
 class LogisticRegression(object):
@@ -52,39 +53,45 @@ def load_mnist_data():
     with gzip.open(data_loc, 'rb') as f:
         train_set, valid_set, test_set = cPickle.load(f)
 
-    def shared_dataset(data_xy, borrow=True):
-        """ Function that loads the dataset into shared variables
-
-        The reason we store our dataset in shared variables is to allow
-        Theano to copy it into the GPU memory (when code is run on GPU).
-        Since copying data into the GPU is slow, copying a minibatch everytime
-        is needed (the default behaviour if the data is not in a shared
-        variable) would lead to a large decrease in performance.
-        """
-        data_x, data_y = data_xy
-        shared_x = th.shared(np.asarray(data_x,
-                                        dtype=th.config.floatX),
-                             borrow=borrow)
-        shared_y = th.shared(np.asarray(data_y,
-                                        dtype=th.config.floatX),
-                             borrow=borrow)
-
-        # When storing data on the GPU it has to be stored as floats
-        # therefore we will store the labels as ``floatX`` as well
-        # (``shared_y`` does exactly that). But during our computations
-        # we need them as ints (we use labels as index, and if they are
-        # floats it doesn't make sense) therefore instead of returning
-        # ``shared_y`` we will have to cast it to int. This little hack
-        # lets ous get around this issue
-        return shared_x, T.cast(shared_y, 'int32')
-
-    test_set_x, test_set_y = shared_dataset(test_set)
-    valid_set_x, valid_set_y = shared_dataset(valid_set)
-    train_set_x, train_set_y = shared_dataset(train_set)
+    test_set_x, test_set_y = load_shared_dataset(test_set)
+    valid_set_x, valid_set_y = load_shared_dataset(valid_set)
+    train_set_x, train_set_y = load_shared_dataset(train_set)
 
     rval = [(train_set_x, train_set_y), (valid_set_x, valid_set_y),
             (test_set_x, test_set_y)]
     return rval
+
+
+def load_shared_dataset(data_xy, borrow=True):
+    """ Function that loads the dataset into shared variables
+
+    The reason we store our dataset in shared variables is to allow
+    Theano to copy it into the GPU memory (when code is run on GPU).
+    Since copying data into the GPU is slow, copying a minibatch everytime
+    is needed (the default behaviour if the data is not in a shared
+    variable) would lead to a large decrease in performance.
+
+    :type borrow: bool
+    :param borrow:
+    :type data_xy: 2-uple of numpy.arrays. One of shape (N, D), one of shape (N,)
+    :param data_xy: dataset to be loaded into shared variables.
+    """
+    data_x, data_y = data_xy
+    shared_x = th.shared(np.asarray(data_x,
+                                    dtype=th.config.floatX),
+                         borrow=borrow)
+    shared_y = th.shared(np.asarray(data_y,
+                                    dtype=th.config.floatX),
+                         borrow=borrow)
+
+    # When storing data on the GPU it has to be stored as floats
+    # therefore we will store the labels as ``floatX`` as well
+    # (``shared_y`` does exactly that). But during our computations
+    # we need them as ints (we use labels as index, and if they are
+    # floats it doesn't make sense) therefore instead of returning
+    # ``shared_y`` we will have to cast it to int. This little hack
+    # lets us get around this issue
+    return shared_x, T.cast(shared_y, 'int32')
 
 
 def sgd_optimization_mnist(learning_rate=0.13, n_epochs=1000, batch_size=600):
@@ -93,29 +100,27 @@ def sgd_optimization_mnist(learning_rate=0.13, n_epochs=1000, batch_size=600):
     train_set_x, train_set_y = datasets[0]
     valid_set_x, valid_set_y = datasets[1]
     test_set_x, test_set_y = datasets[2]
+    do_training(learning_rate, n_epochs, batch_size, train_set_x, train_set_y, valid_set_x, valid_set_y)
+
+
+def do_training(learning_rate, n_epochs, batch_size,
+                train_set_x, train_set_y, valid_set_x, valid_set_y, num_classes=10):
 
     # compute number of minibatches for training, validation and testing
     n_train_batches = train_set_x.get_value(borrow=True).shape[0] / batch_size
     n_valid_batches = valid_set_x.get_value(borrow=True).shape[0] / batch_size
-    n_test_batches = test_set_x.get_value(borrow=True).shape[0] / batch_size
+
+    # get dimensionality and number of classes.
+    dim = train_set_x.get_value(borrow=True).shape[1]
 
     index = T.lscalar()
 
     x = T.matrix('x')
     y = T.ivector('y')
 
-    classifier = LogisticRegression(input_data=x, n_in=784, n_out=10)
+    classifier = LogisticRegression(input_data=x, n_in=dim, n_out=num_classes)
 
     cost = classifier.negative_log_likelihood(y)
-
-    test_model = th.function(
-        inputs=[index],
-        outputs=classifier.errors(y),
-        givens={
-            x: test_set_x[index * batch_size: (index + 1) * batch_size],
-            y: test_set_y[index * batch_size: (index + 1) * batch_size]
-        }
-    )
 
     validate_model = th.function(
         inputs=[index],
@@ -150,18 +155,17 @@ def sgd_optimization_mnist(learning_rate=0.13, n_epochs=1000, batch_size=600):
     validation_frequency = min(n_train_batches, patience / 2)
 
     best_validation_loss = np.inf
-    test_score = 0.0
     start_time = timeit.default_timer()
 
     done_looping = False
     epoch = 0
+    global_iter_num = 0
     while epoch < n_epochs and not done_looping:
         epoch += 1
         for minibatch_index in xrange(n_train_batches):
             train_model(minibatch_index)
-            iter_num = (epoch - 1) * n_train_batches + minibatch_index
 
-            if (iter_num + 1) % validation_frequency == 0:
+            if (global_iter_num + 1) % validation_frequency == 0:
                 validation_losses = [validate_model(i) for i in xrange(n_valid_batches)]
                 this_validation_loss = np.mean(validation_losses)
 
@@ -174,7 +178,7 @@ def sgd_optimization_mnist(learning_rate=0.13, n_epochs=1000, batch_size=600):
 
                 if this_validation_loss < best_validation_loss:
                     if this_validation_loss < best_validation_loss * improvement_threshold:
-                        patience = max(patience, iter_num * patience_increase)
+                        patience = max(patience, global_iter_num * patience_increase)
 
                     best_validation_loss = this_validation_loss
 
@@ -182,8 +186,10 @@ def sgd_optimization_mnist(learning_rate=0.13, n_epochs=1000, batch_size=600):
                     with open('best_model.pkl', 'wb') as f:
                         cPickle.dump(classifier, f)
 
-            if patience <= iter_num:
+            if patience <= global_iter_num:
                 done_looping = True
+
+            global_iter_num += 1
 
     end_time = timeit.default_timer()
     print(
