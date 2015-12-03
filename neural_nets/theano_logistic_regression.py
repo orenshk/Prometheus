@@ -1,12 +1,6 @@
-import os
-import argparse
-import gzip
 import theano as th
 import theano.tensor as T
 import numpy as np
-import pickle
-import timeit
-from utils import load_data
 
 
 class LogisticRegression(object):

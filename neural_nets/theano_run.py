@@ -7,8 +7,8 @@ import numpy as np
 import theano as th
 import theano.tensor as T
 from utils import load_data
-from theano_logistic_regression import LogisticRegression
 from theano_mlp import MultilayerPerceptron
+from theano_logistic_regression import LogisticRegression
 
 
 def load_mnist_data():
@@ -71,46 +71,33 @@ def load_shared_dataset(data_xy, borrow=True):
     return shared_x, T.cast(shared_y, 'int32')
 
 
-def sgd_optimization(classifier_type,
+def sgd_optimization(classifier,
+                     train_set_x,
+                     train_set_y,
+                     valid_set_x,
+                     valid_set_y,
                      learning_rate=0.13,
                      n_epochs=1000,
-                     batch_size=600,
-                     problem='mnist', **kwargs):
+                     batch_size=600):
+    """
+    Run stochastic gradient descent for the given clssifier and training data.
 
-    if problem == 'mnist':
-        datasets = load_mnist_data()
-        num_classes = 10
-    else:
-        datasets = load_higgs_data(data_file=kwargs['data_file'], valid_size=kwargs['valid_size'])
-        num_classes = 2
-
-    train_set_x, train_set_y = datasets[0]
-    valid_set_x, valid_set_y = datasets[1]
+    :param Classifier classifier:  classifier to be trained
+    :param theano.shared train_set_x: training data set.
+    :param theano.shared train_set_y: training labels
+    :param theano.shared valid_set_x: validation set
+    :param theano.shared valid_set_y: validation labels
+    :param float learning_rate:
+    :param int n_epochs:
+    :param int batch_size:
+    :return:
+    """
 
     # compute number of minibatches for training, validation and testing
     n_train_batches = int(train_set_x.get_value(borrow=True).shape[0] / batch_size)
     n_valid_batches = int(valid_set_x.get_value(borrow=True).shape[0] / batch_size)
 
-    # get dimensionality and number of classes.
-    dim = train_set_x.get_value(borrow=True).shape[1]
-
     index = T.lscalar()
-
-    x = T.matrix('x')
-    y = T.ivector('y')
-
-    if classifier_type == 'LR':
-        classifier = LogisticRegression(input_data=x, n_in=dim, n_out=num_classes)
-        cost = classifier.cost(y)
-    elif classifier_type == 'MLP':
-        n_hidden = kwargs['n_hidden']
-        L1_reg = kwargs['L1_reg']
-        L2_reg = kwargs['L2_reg']
-        classifier = MultilayerPerceptron(input_data=x, n_in=dim, n_hidden=n_hidden, n_out=num_classes)
-        cost = classifier.cost(y) + L1_reg * classifier.L1 + L2_reg * classifier.L2
-    else:
-        raise NotImplementedError('Unsupported classifier')
-
 
     validate_model = th.function(
         inputs=[index],
@@ -200,10 +187,34 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    sgd_optimization(classifier_type=args.classifier,
-                     problem=args.problem,
-                     data_file=args.data_file,
-                     valid_size=args.valid_size,
-                     n_hidden=args.n_hidden,
-                     L1_reg=0.0,
-                     L2_reg=0.01)
+    if args.problem == 'mnist':
+        datasets = load_mnist_data()
+        num_classes = 10
+    else:
+        datasets = load_higgs_data(data_file=args.data_file, valid_size=args.valid_size)
+        num_classes = 2
+
+    # get dimensionality and number of classes.
+    dim = datasets[0][0].get_value(borrow=True).shape[1]
+
+    x = T.matrix('x')
+    y = T.ivector('y')
+
+    # initialize the classifier.
+    if args.classifier == 'LR':
+        clf = LogisticRegression(input_data=x, n_in=dim, n_out=num_classes)
+        cost = clf.cost(y)
+    elif args.classifier == 'MLP':
+        n_hidden = args.n_hidden
+        L1_reg = 0.0
+        L2_reg = 0.01
+        clf = MultilayerPerceptron(input_data=x, n_in=dim, n_hidden=n_hidden, n_out=num_classes)
+        cost = clf.cost(y) + L1_reg * clf.L1 + L2_reg * clf.L2
+    else:
+        raise NotImplementedError('Unsupported classifier')
+
+    sgd_optimization(classifier=clf,
+                     train_set_x=datasets[0][0],
+                     train_set_y=datasets[0][1],
+                     valid_set_x=datasets[1][0],
+                     valid_set_y=datasets[1][1])
