@@ -72,26 +72,35 @@ def load_shared_dataset(data_xy, borrow=True):
 
 
 def sgd_optimization(classifier,
+                     cost,
                      train_set_x,
                      train_set_y,
                      valid_set_x,
                      valid_set_y,
-                     learning_rate=0.13,
+                     x,
+                     y,
+                     learning_rate=0.1,
                      n_epochs=1000,
-                     batch_size=600):
+                     batch_size=600,
+                     patience=int(1e4)):
     """
     Run stochastic gradient descent for the given clssifier and training data.
 
-    :param Classifier classifier:  classifier to be trained
+    :param Classifier classifier:  classifier to be trainedx
+    :param function cost: cost function used in training.
     :param theano.shared train_set_x: training data set.
-    :param theano.shared train_set_y: training labels
-    :param theano.shared valid_set_x: validation set
-    :param theano.shared valid_set_y: validation labels
+    :param theano.shared train_set_y: training labels.
+    :param theano.shared valid_set_x: validation set.
+    :param theano.shared valid_set_y: validation labels.
+    :param T.matrix x: theano variable to hold
     :param float learning_rate:
     :param int n_epochs:
     :param int batch_size:
-    :return:
+    :param int patience: maximum number of iterations to run.
     """
+
+    # command line arguments variable
+    global args
 
     # compute number of minibatches for training, validation and testing
     n_train_batches = int(train_set_x.get_value(borrow=True).shape[0] / batch_size)
@@ -101,14 +110,20 @@ def sgd_optimization(classifier,
 
     validate_model = th.function(
         inputs=[index],
-        outputs=classifier.errors(y),
+        outputs=classifier.errors(x, y),
         givens={
             x: valid_set_x[index * batch_size: (index + 1) * batch_size],
             y: valid_set_y[index * batch_size: (index + 1) * batch_size]
         }
     )
+    consider_constant_lst = []
+    if args.adv:
+        if isinstance(classifier, MultilayerPerceptron):
+            consider_constant_lst.append(classifier.log_regression_layer.x_hat)
+        else:
+            consider_constant_lst.append(classifier.x_hat)
 
-    grads = [T.grad(cost=cost, wrt=param) for param in classifier.params]
+    grads = [T.grad(cost=cost, wrt=param, consider_constant=consider_constant_lst) for param in classifier.params]
     updates = [
         (param, param - learning_rate * grad)
         for param, grad in zip(classifier.params, grads)
@@ -124,7 +139,6 @@ def sgd_optimization(classifier,
         }
     )
 
-    patience = 5000
     patience_increase = 2
 
     improvement_threshold = 0.995
@@ -184,6 +198,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_epochs', default=2000, type=int)
     parser.add_argument('--classifier', default='LR', choices={'LR', 'MLP'})
     parser.add_argument('--n_hidden', default=500, type=int)
+    parser.add_argument('--adv', action='store_true')
 
     args = parser.parse_args()
 
@@ -197,24 +212,36 @@ if __name__ == '__main__':
     # get dimensionality and number of classes.
     dim = datasets[0][0].get_value(borrow=True).shape[1]
 
-    x = T.matrix('x')
-    y = T.ivector('y')
+    x_mat = T.matrix('x')
+    y_vec = T.ivector('y')
 
     # initialize the classifier.
     if args.classifier == 'LR':
-        clf = LogisticRegression(input_data=x, n_in=dim, n_out=num_classes)
-        cost = clf.cost(y)
+        clf = LogisticRegression(input_data=x_mat, n_in=dim, n_out=num_classes)
+        if args.adv:
+            cost_func = clf.adv_cost(x_mat, y_vec)
+        else:
+            cost_func = clf.cost(x_mat, y_vec)
+
     elif args.classifier == 'MLP':
         n_hidden = args.n_hidden
         L1_reg = 0.0
         L2_reg = 0.01
-        clf = MultilayerPerceptron(input_data=x, n_in=dim, n_hidden=n_hidden, n_out=num_classes)
-        cost = clf.cost(y) + L1_reg * clf.L1 + L2_reg * clf.L2
+        clf = MultilayerPerceptron(input_data=x_mat, n_in=dim, n_hidden=n_hidden, n_out=num_classes)
+        if args.adv:
+            cost_func = clf.adv_cost(x_mat, y_vec)
+        else:
+            cost_func = clf.cost(x_mat, y_vec)
+
+        cost_func = cost_func + L1_reg * clf.L1 + L2_reg * clf.L2
     else:
         raise NotImplementedError('Unsupported classifier')
 
     sgd_optimization(classifier=clf,
+                     cost=cost_func,
                      train_set_x=datasets[0][0],
                      train_set_y=datasets[0][1],
                      valid_set_x=datasets[1][0],
-                     valid_set_y=datasets[1][1])
+                     valid_set_y=datasets[1][1],
+                     x=x_mat,
+                     y=y_vec)
