@@ -92,15 +92,11 @@ def sgd_optimization(classifier,
     :param theano.shared train_set_y: training labels.
     :param theano.shared valid_set_x: validation set.
     :param theano.shared valid_set_y: validation labels.
-    :param T.matrix x: theano variable to hold
     :param float learning_rate:
     :param int n_epochs:
     :param int batch_size:
     :param int patience: maximum number of iterations to run.
     """
-
-    # command line arguments variable
-    global args
 
     # compute number of minibatches for training, validation and testing
     n_train_batches = int(train_set_x.get_value(borrow=True).shape[0] / batch_size)
@@ -116,14 +112,8 @@ def sgd_optimization(classifier,
             y: valid_set_y[index * batch_size: (index + 1) * batch_size]
         }
     )
-    consider_constant_lst = []
-    if args.adv:
-        if isinstance(classifier, MultilayerPerceptron):
-            consider_constant_lst.append(classifier.log_regression_layer.x_hat)
-        else:
-            consider_constant_lst.append(classifier.x_hat)
 
-    grads = [T.grad(cost=cost, wrt=param, consider_constant=consider_constant_lst) for param in classifier.params]
+    grads = [T.grad(cost=cost, wrt=param) for param in classifier.params]
     updates = [
         (param, param - learning_rate * grad)
         for param, grad in zip(classifier.params, grads)
@@ -190,6 +180,44 @@ def sgd_optimization(classifier,
     print('The code ran for {} epochs, with {} epochs / sec'.format(epoch, 1. * epoch / elapsed))
 
 
+def main(argv):
+
+    if argv.problem == 'mnist':
+        datasets = load_mnist_data()
+        num_classes = 10
+    else:
+        datasets = load_higgs_data(data_file=argv.data_file, valid_size=argv.valid_size)
+        num_classes = 2
+
+    # get dimensionality and number of classes.
+    dim = datasets[0][0].get_value(borrow=True).shape[1]
+
+    x = T.matrix('x')
+    y = T.ivector('y')
+
+    # initialize the classifier.
+    if argv.classifier == 'LR':
+        clf = LogisticRegression(input_data=x, n_in=dim, n_out=num_classes)
+        cost = clf.cost(y)
+
+    elif argv.classifier == 'MLP':
+        n_hidden = argv.n_hidden
+        L1_reg = 0.0
+        L2_reg = 0.01
+        clf = MultilayerPerceptron(input_data=x, n_in=dim, n_hidden=n_hidden, n_out=num_classes)
+        cost = clf.cost(y) + L1_reg * clf.L1 + L2_reg * clf.L2
+    else:
+        raise NotImplementedError('Unsupported classifier')
+
+    sgd_optimization(classifier=clf,
+                     cost=cost,
+                     train_set_x=datasets[0][0],
+                     train_set_y=datasets[0][1],
+                     valid_set_x=datasets[1][0],
+                     valid_set_y=datasets[1][1],
+                     x=x,
+                     y=y)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--problem', default='mnist', choices={'mnist', 'higgs'})
@@ -199,49 +227,9 @@ if __name__ == '__main__':
     parser.add_argument('--classifier', default='LR', choices={'LR', 'MLP'})
     parser.add_argument('--n_hidden', default=500, type=int)
     parser.add_argument('--adv', action='store_true')
+    parser.add_argument('--patience', default=5000, type=int)
 
     args = parser.parse_args()
+    main(args)
 
-    if args.problem == 'mnist':
-        datasets = load_mnist_data()
-        num_classes = 10
-    else:
-        datasets = load_higgs_data(data_file=args.data_file, valid_size=args.valid_size)
-        num_classes = 2
 
-    # get dimensionality and number of classes.
-    dim = datasets[0][0].get_value(borrow=True).shape[1]
-
-    x_mat = T.matrix('x')
-    y_vec = T.ivector('y')
-
-    # initialize the classifier.
-    if args.classifier == 'LR':
-        clf = LogisticRegression(input_data=x_mat, n_in=dim, n_out=num_classes)
-        if args.adv:
-            cost_func = clf.adv_cost(x_mat, y_vec)
-        else:
-            cost_func = clf.cost(x_mat, y_vec)
-
-    elif args.classifier == 'MLP':
-        n_hidden = args.n_hidden
-        L1_reg = 0.0
-        L2_reg = 0.01
-        clf = MultilayerPerceptron(input_data=x_mat, n_in=dim, n_hidden=n_hidden, n_out=num_classes)
-        if args.adv:
-            cost_func = clf.adv_cost(x_mat, y_vec)
-        else:
-            cost_func = clf.cost(x_mat, y_vec)
-
-        cost_func = cost_func + L1_reg * clf.L1 + L2_reg * clf.L2
-    else:
-        raise NotImplementedError('Unsupported classifier')
-
-    sgd_optimization(classifier=clf,
-                     cost=cost_func,
-                     train_set_x=datasets[0][0],
-                     train_set_y=datasets[0][1],
-                     valid_set_x=datasets[1][0],
-                     valid_set_y=datasets[1][1],
-                     x=x_mat,
-                     y=y_vec)

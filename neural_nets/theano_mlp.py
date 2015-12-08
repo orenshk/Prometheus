@@ -116,7 +116,6 @@ class MultilayerPerceptron(object):
         self.L2 = abs(self.hidden_layer.W ** 2).sum() + abs(self.log_regression_layer.W ** 2).sum()
 
         self.cost = self.log_regression_layer.cost
-        self.adv_cost = self.log_regression_layer.adv_cost
         self.errors = self.log_regression_layer.errors
         self.params = self.hidden_layer.params + self.log_regression_layer.params
 
