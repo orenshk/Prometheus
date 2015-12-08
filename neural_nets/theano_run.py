@@ -10,7 +10,6 @@ from utils import load_data
 from theano_mlp import MultilayerPerceptron
 from theano_logistic_regression import LogisticRegression
 
-
 def load_mnist_data():
     data_loc = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                             'data',
@@ -28,7 +27,6 @@ def load_mnist_data():
             (test_set_x, test_set_y)]
     return rval
 
-
 def load_higgs_data(data_file, valid_size):
     # we get back a tuple of train data, test data, train weights, train labels, and test labels
     dataset = load_data(data_file, valid_size, encoding='integer')
@@ -37,7 +35,6 @@ def load_higgs_data(data_file, valid_size):
     valid_set_x, valid_set_y = load_shared_dataset((dataset[1], dataset[4]))
 
     return [(train_set_x, train_set_y), (valid_set_x, valid_set_y)]
-
 
 def load_shared_dataset(data_xy, borrow=True):
     """ Function that loads the dataset into shared variables
@@ -70,7 +67,6 @@ def load_shared_dataset(data_xy, borrow=True):
     # lets us get around this issue
     return shared_x, T.cast(shared_y, 'int32')
 
-
 def sgd_optimization(classifier,
                      cost,
                      train_set_x,
@@ -92,6 +88,8 @@ def sgd_optimization(classifier,
     :param theano.shared train_set_y: training labels.
     :param theano.shared valid_set_x: validation set.
     :param theano.shared valid_set_y: validation labels.
+    :param theano.matrix x: variable to hold feature data.
+    :param theano.matrix y: variable to hold label data.
     :param float learning_rate:
     :param int n_epochs:
     :param int batch_size:
@@ -129,6 +127,115 @@ def sgd_optimization(classifier,
         }
     )
 
+    do_training(training_step=train_model,
+                validation_step=validate_model,
+                n_epochs=n_epochs,
+                n_train_batches=n_train_batches,
+                n_valid_batches=n_valid_batches,
+                patience=patience)
+
+
+def adv_sgd(classifier,
+            cost,
+            train_set_x,
+            train_set_y,
+            valid_set_x,
+            valid_set_y,
+            x,
+            y,
+            learning_rate=0.1,
+            n_epochs=1000,
+            batch_size=600,
+            patience=int(1e4)):
+
+    """
+    Run stochastic gradient descent for the given classifier and training data, using
+    adversarial regularization
+
+    :param Classifier classifier:  classifier to be trainedx
+    :param function cost: cost function used in training.
+    :param theano.shared train_set_x: training data set.
+    :param theano.shared train_set_y: training labels.
+    :param theano.shared valid_set_x: validation set.
+    :param theano.shared valid_set_y: validation labels.
+    :param theano.matrix x: variable to hold feature data.
+    :param theano.matrix y: variable to hold label data.
+    :param float learning_rate:
+    :param int n_epochs:
+    :param int batch_size:
+    :param int patience: maximum number of iterations to run.
+    """
+
+    # compute number of minibatches for training, validation and testing
+    n_train_batches = int(train_set_x.get_value(borrow=True).shape[0] / batch_size)
+    n_valid_batches = int(valid_set_x.get_value(borrow=True).shape[0] / batch_size)
+
+    index = T.lscalar()
+
+    # function that will validate the model during training
+    validate_model = th.function(
+        inputs=[index],
+        outputs=classifier.errors(x, y),
+        givens={
+            x: valid_set_x[index * batch_size: (index + 1) * batch_size],
+            y: valid_set_y[index * batch_size: (index + 1) * batch_size]
+        }
+    )
+
+    # the gradients for the network:
+    # LogisticRegression: W, b
+    # Multilayer: hidden.W, hidden.b, output.W, output.b
+    grads = [T.grad(cost=cost, wrt=param) for param in classifier.params]
+
+    # the gradient of the cost function w.r.t x, for the adversarial part.
+    grads.append([T.grad(cost=cost, wrt=x)])
+
+    grads_tilde = [T.grad(cost=cost, wrt=param) for param in classifier.param]
+
+    # in the first run, we'll get the gradients.
+    first_run = th.function(
+        inputs=[index],
+        outputs=grads,
+        givens={
+            x: train_set_x[index * batch_size: (index + 1) * batch_size],
+            y: train_set_y[index * batch_size: (index + 1) * batch_size]
+        }
+    )
+
+    # we need the signs of the gradient w.r.t x
+    grad_x = grads[-1]
+    sign_grad_x = (grad_x > 0) - (grad_x < 0)
+
+    # here we'll get the gradient w.e.t. W & b of the cost function applied to x + sign(grad).
+    eps = 0.1
+    second_run = th.function(
+        inputs=[index],
+        outputs=grads_tilde,
+        givens={
+            x: train_set_x[index * batch_size: (index + 1) * batch_size] + eps * sign_grad_x,
+            y: train_set_y[index * batch_size: (index + 1) * batch_size]
+        }
+    )
+
+    # now it's time for the train step. We'll define the updates for every grad, except the grad w.r.t x
+    alpha = 0.5
+    updates = []
+    for param, grad, grad_tilde in zip(classifier.params, grads[:-1], grads_tilde):
+        updates.append((param, param - (alpha * grad + (1 - alpha) * grad_tilde)))
+
+    train_step = th.function(
+        inputs=[index],
+        outputs=cost,
+        updates=updates,
+        givens={
+            x: train_set_x[index * batch_size: (index + 1) * batch_size],
+            y: train_set_y[index * batch_size: (index + 1) * batch_size]
+        }
+    )
+
+
+def do_training(training_step, validation_step, n_epochs, n_train_batches, n_valid_batches, patience):
+
     patience_increase = 2
 
     improvement_threshold = 0.995
@@ -136,18 +243,19 @@ def sgd_optimization(classifier,
     validation_frequency = min(n_train_batches, patience / 2)
 
     best_validation_loss = np.inf
+
     start_time = timeit.default_timer()
 
-    done_looping = False
     epoch = 0
     global_iter_num = 0
-    while epoch < n_epochs and not done_looping:
+
+    while epoch < n_epochs and patience > global_iter_num:
         epoch += 1
         for minibatch_index in range(n_train_batches):
-            train_model(minibatch_index)
+            training_step(minibatch_index)
 
             if (global_iter_num + 1) % validation_frequency == 0:
-                validation_losses = [validate_model(i) for i in range(n_valid_batches)]
+                validation_losses = [validation_step(i) for i in range(n_valid_batches)]
                 this_validation_loss = np.mean(validation_losses)
 
                 print(
@@ -162,13 +270,6 @@ def sgd_optimization(classifier,
                         patience = max(patience, global_iter_num * patience_increase)
 
                     best_validation_loss = this_validation_loss
-
-                    # save the best model
-                    with open('best_model.pkl', 'wb') as f:
-                        pickle.dump(classifier, f)
-
-            if patience <= global_iter_num:
-                done_looping = True
 
             global_iter_num += 1
 
