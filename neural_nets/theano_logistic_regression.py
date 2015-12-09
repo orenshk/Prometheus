@@ -39,7 +39,7 @@ class LogisticRegression(object):
         """
         return -T.mean(T.log(self.p_y_given_x[T.arange(y.shape[0]), y]))
 
-    def errors(self, x, y):
+    def errors(self, y):
         assert y.dtype.startswith('int')
 
         if y.ndim != self.y_pred.ndim:

@@ -10,6 +10,7 @@ from utils import load_data
 from theano_mlp import MultilayerPerceptron
 from theano_logistic_regression import LogisticRegression
 
+
 def load_mnist_data():
     data_loc = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                             'data',
@@ -27,6 +28,7 @@ def load_mnist_data():
             (test_set_x, test_set_y)]
     return rval
 
+
 def load_higgs_data(data_file, valid_size):
     # we get back a tuple of train data, test data, train weights, train labels, and test labels
     dataset = load_data(data_file, valid_size, encoding='integer')
@@ -35,6 +37,7 @@ def load_higgs_data(data_file, valid_size):
     valid_set_x, valid_set_y = load_shared_dataset((dataset[1], dataset[4]))
 
     return [(train_set_x, train_set_y), (valid_set_x, valid_set_y)]
+
 
 def load_shared_dataset(data_xy, borrow=True):
     """ Function that loads the dataset into shared variables
@@ -66,6 +69,7 @@ def load_shared_dataset(data_xy, borrow=True):
     # ``shared_y`` we will have to cast it to int. This little hack
     # lets us get around this issue
     return shared_x, T.cast(shared_y, 'int32')
+
 
 def sgd_optimization(classifier,
                      cost,
@@ -104,7 +108,7 @@ def sgd_optimization(classifier,
 
     validate_model = th.function(
         inputs=[index],
-        outputs=classifier.errors(x, y),
+        outputs=classifier.errors(y),
         givens={
             x: valid_set_x[index * batch_size: (index + 1) * batch_size],
             y: valid_set_y[index * batch_size: (index + 1) * batch_size]
@@ -128,6 +132,7 @@ def sgd_optimization(classifier,
     )
 
     do_training(training_step=train_model,
+                training_step_args=[],
                 validation_step=validate_model,
                 n_epochs=n_epochs,
                 n_train_batches=n_train_batches,
@@ -143,11 +148,10 @@ def adv_sgd(classifier,
             valid_set_y,
             x,
             y,
-            learning_rate=0.1,
+            learning_rate=0.5,
             n_epochs=1000,
             batch_size=600,
             patience=int(1e4)):
-
     """
     Run stochastic gradient descent for the given classifier and training data, using
     adversarial regularization
@@ -175,7 +179,7 @@ def adv_sgd(classifier,
     # function that will validate the model during training
     validate_model = th.function(
         inputs=[index],
-        outputs=classifier.errors(x, y),
+        outputs=classifier.errors(y),
         givens={
             x: valid_set_x[index * batch_size: (index + 1) * batch_size],
             y: valid_set_y[index * batch_size: (index + 1) * batch_size]
@@ -188,44 +192,21 @@ def adv_sgd(classifier,
     grads = [T.grad(cost=cost, wrt=param) for param in classifier.params]
 
     # the gradient of the cost function w.r.t x, for the adversarial part.
-    grads.append([T.grad(cost=cost, wrt=x)])
-
-    grads_tilde = [T.grad(cost=cost, wrt=param) for param in classifier.param]
-
-    # in the first run, we'll get the gradients.
-    first_run = th.function(
-        inputs=[index],
-        outputs=grads,
-        givens={
-            x: train_set_x[index * batch_size: (index + 1) * batch_size],
-            y: train_set_y[index * batch_size: (index + 1) * batch_size]
-        }
-    )
+    grads.append(T.grad(cost=cost, wrt=x))
 
     # we need the signs of the gradient w.r.t x
     grad_x = grads[-1]
     sign_grad_x = (grad_x > 0) - (grad_x < 0)
 
-    # here we'll get the gradient w.e.t. W & b of the cost function applied to x + sign(grad).
-    eps = 0.1
-    second_run = th.function(
-        inputs=[index],
-        outputs=grads_tilde,
-        givens={
-            x: train_set_x[index * batch_size: (index + 1) * batch_size] + eps * sign_grad_x,
-            y: train_set_y[index * batch_size: (index + 1) * batch_size]
-        }
-    )
+    updates = [
+        (param, param - learning_rate * grad)
+        for param, grad in zip(classifier.params, grads)
+        ]
 
-    # now it's time for the train step. We'll define the updates for every grad, except the grad w.r.t x
-    alpha = 0.5
-    updates = []
-    for param, grad, grad_tilde in zip(classifier.params, grads[:-1], grads_tilde):
-        updates.append((param, param - (alpha * grad + (1 - alpha) * grad_tilde)))
-
-    train_step = th.function(
+    # in the first run, we'll get the gradients.
+    first_run = th.function(
         inputs=[index],
-        outputs=cost,
+        outputs=sign_grad_x,
         updates=updates,
         givens={
             x: train_set_x[index * batch_size: (index + 1) * batch_size],
@@ -233,9 +214,35 @@ def adv_sgd(classifier,
         }
     )
 
+    # here we'll get the gradient w.r.t. W & b of the cost function applied to x + sign(grad).
+    eps = 0.001
+    sign_grad = T.matrix('sign_grad')
+    second_run = th.function(
+        inputs=[index, sign_grad],
+        outputs=grads,
+        updates=updates,
+        givens={
+            x: train_set_x[index * batch_size: (index + 1) * batch_size] + eps * sign_grad,
+            y: train_set_y[index * batch_size: (index + 1) * batch_size]
+        }
+    )
 
-def do_training(training_step, validation_step, n_epochs, n_train_batches, n_valid_batches, patience):
+    # now it's time for the train step. We'll define the updates for every grad, except the grad w.r.t x
+    do_training(training_step=adv_training_steps,
+                training_step_args=[first_run, second_run],
+                validation_step=validate_model,
+                n_epochs=n_epochs,
+                n_train_batches=n_train_batches,
+                n_valid_batches=n_valid_batches,
+                patience=patience)
 
+
+def adv_training_steps(index, first_run, second_run):
+    sign_grad_x = first_run(index)
+    second_run(index, sign_grad_x)
+
+
+def do_training(training_step, training_step_args, validation_step, n_epochs, n_train_batches, n_valid_batches, patience):
     patience_increase = 2
 
     improvement_threshold = 0.995
@@ -252,7 +259,7 @@ def do_training(training_step, validation_step, n_epochs, n_train_batches, n_val
     while epoch < n_epochs and patience > global_iter_num:
         epoch += 1
         for minibatch_index in range(n_train_batches):
-            training_step(minibatch_index)
+            training_step(minibatch_index, *training_step_args)
 
             if (global_iter_num + 1) % validation_frequency == 0:
                 validation_losses = [validation_step(i) for i in range(n_valid_batches)]
@@ -282,7 +289,6 @@ def do_training(training_step, validation_step, n_epochs, n_train_batches, n_val
 
 
 def main(argv):
-
     if argv.problem == 'mnist':
         datasets = load_mnist_data()
         num_classes = 10
@@ -310,14 +316,25 @@ def main(argv):
     else:
         raise NotImplementedError('Unsupported classifier')
 
-    sgd_optimization(classifier=clf,
-                     cost=cost,
-                     train_set_x=datasets[0][0],
-                     train_set_y=datasets[0][1],
-                     valid_set_x=datasets[1][0],
-                     valid_set_y=datasets[1][1],
-                     x=x,
-                     y=y)
+    if args.adv:
+        adv_sgd(classifier=clf,
+                cost=cost,
+                train_set_x=datasets[0][0],
+                train_set_y=datasets[0][1],
+                valid_set_x=datasets[1][0],
+                valid_set_y=datasets[1][1],
+                x=x,
+                y=y)
+    else:
+        sgd_optimization(classifier=clf,
+                         cost=cost,
+                         train_set_x=datasets[0][0],
+                         train_set_y=datasets[0][1],
+                         valid_set_x=datasets[1][0],
+                         valid_set_y=datasets[1][1],
+                         x=x,
+                         y=y)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -332,5 +349,3 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     main(args)
-
-
