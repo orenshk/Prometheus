@@ -13,7 +13,7 @@ def load_classifier(file_path):
         return pickle.load(f)
 
 
-def load_data(data_file, test_size, encoding='string'):
+def load_data(data_file, test_size, encoding='string', normalize=False):
     """
     Load the data from data_file and split it into training set and test set. The test size is a fraction of the set.
     :type encoding: str
@@ -60,6 +60,14 @@ def load_data(data_file, test_size, encoding='string'):
 
     print('done')
     sys.stdout.flush()
+
+    if normalize:
+        mean_data = np.mean(data, 0)
+        std_data = np.std(data, 0)
+        data = (data - mean_data) / std_data
+
+
+
 
     # we're going to use grid search to find best parameters.
     train_data, test_data, train_labels, test_labels = train_test_split(data, labels, test_size=test_size)

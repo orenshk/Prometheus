@@ -109,7 +109,7 @@ class MultilayerPerceptron(object):
         self.log_regression_layer = LogisticRegression(
             input_data=self.hidden_layer.output,
             n_in=n_hidden,
-            n_out=n_out
+            n_out=n_out,
         )
 
         self.L1 = abs(self.hidden_layer.W).sum() + abs(self.log_regression_layer.W).sum()

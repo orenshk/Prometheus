@@ -29,9 +29,9 @@ def load_mnist_data():
     return rval
 
 
-def load_higgs_data(data_file, valid_size):
+def load_higgs_data(data_file, valid_size, normalize):
     # we get back a tuple of train data, test data, train weights, train labels, and test labels
-    dataset = load_data(data_file, valid_size, encoding='integer')
+    dataset = load_data(data_file, valid_size, encoding='integer', normalize=normalize)
 
     train_set_x, train_set_y = load_shared_dataset((dataset[0], dataset[3]))
     valid_set_x, valid_set_y = load_shared_dataset((dataset[1], dataset[4]))
@@ -148,15 +148,15 @@ def adv_sgd(classifier,
             valid_set_y,
             x,
             y,
-            learning_rate=0.5,
+            learning_rate=0.05,
             n_epochs=1000,
-            batch_size=600,
-            patience=int(1e4)):
+            batch_size=1,
+            patience=2*int(1e4)):
     """
     Run stochastic gradient descent for the given classifier and training data, using
     adversarial regularization
 
-    :param Classifier classifier:  classifier to be trainedx
+    :param Classifier classifier:  classifier to be trained
     :param function cost: cost function used in training.
     :param theano.shared train_set_x: training data set.
     :param theano.shared train_set_y: training labels.
@@ -293,7 +293,7 @@ def main(argv):
         datasets = load_mnist_data()
         num_classes = 10
     else:
-        datasets = load_higgs_data(data_file=argv.data_file, valid_size=argv.valid_size)
+        datasets = load_higgs_data(data_file=argv.data_file, valid_size=argv.valid_size, normalize=argv.normalize)
         num_classes = 2
 
     # get dimensionality and number of classes.
@@ -346,6 +346,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_hidden', default=500, type=int)
     parser.add_argument('--adv', action='store_true')
     parser.add_argument('--patience', default=5000, type=int)
+    parser.add_argument('--normalize', action='store_true')
 
     args = parser.parse_args()
     main(args)
