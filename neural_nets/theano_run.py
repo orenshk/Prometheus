@@ -82,7 +82,7 @@ def sgd_optimization(classifier,
                      y,
                      learning_rate=0.1,
                      n_epochs=1000,
-                     batch_size=600):
+                     batch_size=1):
     """
     Run stochastic gradient descent for the given clssifier and training data.
 
@@ -130,12 +130,12 @@ def sgd_optimization(classifier,
         }
     )
 
-    do_training(training_step=train_model,
-                training_step_args=[],
-                validation_step=validate_model,
-                n_epochs=n_epochs,
-                n_train_batches=n_train_batches,
-                n_valid_batches=n_valid_batches)
+    return do_training(training_step=train_model,
+                       training_step_args=[],
+                       validation_step=validate_model,
+                       n_epochs=n_epochs,
+                       n_train_batches=n_train_batches,
+                       n_valid_batches=n_valid_batches)
 
 
 def adv_sgd(classifier,
@@ -224,12 +224,12 @@ def adv_sgd(classifier,
     )
 
     # now it's time for the train step. We'll define the updates for every grad, except the grad w.r.t x
-    do_training(training_step=adv_training_steps,
-                training_step_args=[first_run, second_run],
-                validation_step=validate_model,
-                n_epochs=n_epochs,
-                n_train_batches=n_train_batches,
-                n_valid_batches=n_valid_batches)
+    return do_training(training_step=adv_training_steps,
+                       training_step_args=[first_run, second_run],
+                       validation_step=validate_model,
+                       n_epochs=n_epochs,
+                       n_train_batches=n_train_batches,
+                       n_valid_batches=n_valid_batches)
 
 
 def adv_training_steps(index, first_run, second_run):
@@ -243,6 +243,9 @@ def do_training(training_step, training_step_args, validation_step, n_epochs, n_
     validation_frequency = 10000
 
     best_validation_loss = np.inf
+    best_validation_losses = []
+    best_validation_life = 11
+    improvement_threshold = best_validation_life * 1e3
 
     start_time = timeit.default_timer()
 
@@ -256,6 +259,7 @@ def do_training(training_step, training_step_args, validation_step, n_epochs, n_
             global_iter_num += 1
             if minibatch_index % validation_frequency == 0:
                 sys.stdout.flush()
+
                 best_validation_loss = validate(validation_step,
                                                 best_validation_loss,
                                                 epoch,
@@ -266,14 +270,22 @@ def do_training(training_step, training_step_args, validation_step, n_epochs, n_
         print('done epoch {}. Elapsed time: {:.3f}'.format(epoch, timeit.default_timer() - start_time))
         print('best validation score for epoch was: {}'.format(best_validation_loss * 100))
 
-    # after we've gone through all the samples once, check against the validation set.
+        # check if we should stop earlier. If there hasn't been a change in the last few generations, stop.
+        best_validation_losses.append(best_validation_loss)
+        if len(best_validation_losses) == best_validation_life:
+            if np.all(np.diff(best_validation_losses) <= improvement_threshold):
+                print('no improvement for the last {} epochs. Stopping.'.format(best_validation_life))
+                break
+            else:
+                best_validation_losses = best_validation_losses[1:]
+
     end_time = timeit.default_timer()
-    print(
-        'Optimization complete with best validation score of {}'.format(best_validation_loss * 100.)
-    )
+    print('Optimization complete with best validation score of {}'.format(best_validation_loss * 100.))
     elapsed = end_time - start_time
     print('The code ran for {} epochs, with {} epochs / sec'.format(epoch, 1. * epoch / elapsed))
     print('Total run time was: {:.3f} seconds'.format(elapsed))
+
+    return best_validation_loss
 
 
 def validate(validation_step,
@@ -305,13 +317,16 @@ def validate(validation_step,
     return best_validation_loss
 
 
-def main(argv):
-    if argv.problem == 'mnist':
-        datasets = load_mnist_data()
-        num_classes = 10
+def main(argv, datasets=None, num_classes=None):
+    if datasets:
+        assert num_classes is not None, "num_classes must be provided if the dataset isn't loaded from file"
     else:
-        datasets = load_higgs_data(data_file=argv.data_file, valid_size=argv.valid_size, normalize=argv.normalize)
-        num_classes = 2
+        if argv.problem == 'mnist':
+            datasets = load_mnist_data()
+            num_classes = 10
+        else:
+            datasets = load_higgs_data(data_file=argv.data_file, valid_size=argv.valid_size, normalize=argv.normalize)
+            num_classes = 2
 
     # get dimensionality and number of classes.
     dim = datasets[0][0].get_value(borrow=True).shape[1]
@@ -319,32 +334,14 @@ def main(argv):
     x = T.matrix('x')
     y = T.ivector('y')
 
-    # initialize the classifier.
-    if argv.classifier == 'LR':
-        clf = LogisticRegression(input_data=x, n_in=dim, n_out=num_classes)
-        cost = clf.cost(y)
+    n_hidden = argv.n_hidden
+    L1_reg = 0.0
+    L2_reg = 0.01
+    clf = MultilayerPerceptron(input_data=x, n_in=dim, n_hidden=n_hidden, n_out=num_classes, cost=argv.cost)
+    cost = clf.cost(y) + L1_reg * clf.L1 + L2_reg * clf.L2
 
-    elif argv.classifier == 'MLP':
-        n_hidden = argv.n_hidden
-        L1_reg = 0.0
-        L2_reg = 0.01
-        clf = MultilayerPerceptron(input_data=x, n_in=dim, n_hidden=n_hidden, n_out=num_classes)
-        cost = clf.cost(y) + L1_reg * clf.L1 + L2_reg * clf.L2
-    else:
-        raise NotImplementedError('Unsupported classifier')
-
-    if args.adv:
-        adv_sgd(classifier=clf,
-                cost=cost,
-                train_set_x=datasets[0][0],
-                train_set_y=datasets[0][1],
-                valid_set_x=datasets[1][0],
-                valid_set_y=datasets[1][1],
-                x=x,
-                y=y,
-                n_epochs=argv.n_epochs)
-    else:
-        sgd_optimization(classifier=clf,
+    if argv.adv:
+        result = adv_sgd(classifier=clf,
                          cost=cost,
                          train_set_x=datasets[0][0],
                          train_set_y=datasets[0][1],
@@ -353,6 +350,18 @@ def main(argv):
                          x=x,
                          y=y,
                          n_epochs=argv.n_epochs)
+    else:
+        result = sgd_optimization(classifier=clf,
+                                  cost=cost,
+                                  train_set_x=datasets[0][0],
+                                  train_set_y=datasets[0][1],
+                                  valid_set_x=datasets[1][0],
+                                  valid_set_y=datasets[1][1],
+                                  x=x,
+                                  y=y,
+                                  n_epochs=argv.n_epochs)
+
+    return result
 
 
 if __name__ == '__main__':
@@ -361,10 +370,10 @@ if __name__ == '__main__':
     parser.add_argument('--data_file', default='training.csv')
     parser.add_argument('--valid_size', default=0.1, type=float)
     parser.add_argument('--n_epochs', default=2000, type=int)
-    parser.add_argument('--classifier', default='LR', choices={'LR', 'MLP'})
     parser.add_argument('--n_hidden', default=600, type=int)
     parser.add_argument('--adv', action='store_true')
     parser.add_argument('--normalize', action='store_true')
+    parser.add_argument('--cost', default='neg_log', choices={'neg_log', 'cross_ent'})
 
     args = parser.parse_args()
     main(args)

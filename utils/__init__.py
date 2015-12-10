@@ -66,9 +66,6 @@ def load_data(data_file, test_size, encoding='string', normalize=False):
         std_data = np.std(data, 0)
         data = (data - mean_data) / std_data
 
-
-
-
     # we're going to use grid search to find best parameters.
     train_data, test_data, train_labels, test_labels = train_test_split(data, labels, test_size=test_size)
 

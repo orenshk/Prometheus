@@ -79,7 +79,7 @@ class HiddenLayer(object):
 
 
 class MultilayerPerceptron(object):
-    def __init__(self, input_data, n_in, n_hidden, n_out, L1_reg=0., L2_reg=0.0001):
+    def __init__(self, input_data, n_in, n_hidden, n_out, L1_reg=0., L2_reg=0.0001, cost='neg_log'):
         """
         Initialize the parameters for the multilayer perceptron
 
@@ -106,11 +106,19 @@ class MultilayerPerceptron(object):
             activation=T.tanh
         )
 
+        if cost == 'neg_log':
+            # this will cause log_regression_layer to choose negative log likelihood
+            cost_func = None
+        elif cost == 'cross_ent':
+            cost_func = self.cross_entropy
+        else:
+            raise NotImplementedError('cost function {} not implemented'.format(cost))
+
         self.log_regression_layer = LogisticRegression(
             input_data=self.hidden_layer.output,
             n_in=n_hidden,
             n_out=n_out,
-            # cost=self.cross_entropy
+            cost=cost_func
         )
 
         self.L1 = abs(self.hidden_layer.W).sum() + abs(self.log_regression_layer.W).sum()
