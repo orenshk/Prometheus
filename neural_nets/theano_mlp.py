@@ -110,6 +110,7 @@ class MultilayerPerceptron(object):
             input_data=self.hidden_layer.output,
             n_in=n_hidden,
             n_out=n_out,
+            # cost=self.cross_entropy
         )
 
         self.L1 = abs(self.hidden_layer.W).sum() + abs(self.log_regression_layer.W).sum()
@@ -121,3 +122,6 @@ class MultilayerPerceptron(object):
 
         self.input = input_data
 
+    def cross_entropy(self, y):
+        clf = self.log_regression_layer
+        return -T.sum(y * T.log(clf.p_y_given_x[T.arange(y.shape[0]), y]))

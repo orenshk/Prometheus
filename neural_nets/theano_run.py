@@ -4,6 +4,7 @@ import pickle
 import timeit
 import argparse
 import numpy as np
+import sys
 import theano as th
 import theano.tensor as T
 from utils import load_data
@@ -81,8 +82,7 @@ def sgd_optimization(classifier,
                      y,
                      learning_rate=0.1,
                      n_epochs=1000,
-                     batch_size=600,
-                     patience=int(1e4)):
+                     batch_size=600):
     """
     Run stochastic gradient descent for the given clssifier and training data.
 
@@ -97,7 +97,6 @@ def sgd_optimization(classifier,
     :param float learning_rate:
     :param int n_epochs:
     :param int batch_size:
-    :param int patience: maximum number of iterations to run.
     """
 
     # compute number of minibatches for training, validation and testing
@@ -136,8 +135,7 @@ def sgd_optimization(classifier,
                 validation_step=validate_model,
                 n_epochs=n_epochs,
                 n_train_batches=n_train_batches,
-                n_valid_batches=n_valid_batches,
-                patience=patience)
+                n_valid_batches=n_valid_batches)
 
 
 def adv_sgd(classifier,
@@ -150,8 +148,7 @@ def adv_sgd(classifier,
             y,
             learning_rate=0.05,
             n_epochs=1000,
-            batch_size=1,
-            patience=2*int(1e4)):
+            batch_size=1):
     """
     Run stochastic gradient descent for the given classifier and training data, using
     adversarial regularization
@@ -167,7 +164,6 @@ def adv_sgd(classifier,
     :param float learning_rate:
     :param int n_epochs:
     :param int batch_size:
-    :param int patience: maximum number of iterations to run.
     """
 
     # compute number of minibatches for training, validation and testing
@@ -233,8 +229,7 @@ def adv_sgd(classifier,
                 validation_step=validate_model,
                 n_epochs=n_epochs,
                 n_train_batches=n_train_batches,
-                n_valid_batches=n_valid_batches,
-                patience=patience)
+                n_valid_batches=n_valid_batches)
 
 
 def adv_training_steps(index, first_run, second_run):
@@ -242,12 +237,10 @@ def adv_training_steps(index, first_run, second_run):
     second_run(index, sign_grad_x)
 
 
-def do_training(training_step, training_step_args, validation_step, n_epochs, n_train_batches, n_valid_batches, patience):
-    patience_increase = 2
+def do_training(training_step, training_step_args, validation_step, n_epochs, n_train_batches, n_valid_batches):
+    print('n_epochs: {}, n_train_batches: {}'.format(n_epochs, n_train_batches))
 
-    improvement_threshold = 0.995
-
-    validation_frequency = min(n_train_batches, patience / 2)
+    validation_frequency = 10000
 
     best_validation_loss = np.inf
 
@@ -256,36 +249,60 @@ def do_training(training_step, training_step_args, validation_step, n_epochs, n_
     epoch = 0
     global_iter_num = 0
 
-    while epoch < n_epochs and patience > global_iter_num:
+    while epoch < n_epochs:
         epoch += 1
         for minibatch_index in range(n_train_batches):
             training_step(minibatch_index, *training_step_args)
-
-            if (global_iter_num + 1) % validation_frequency == 0:
-                validation_losses = [validation_step(i) for i in range(n_valid_batches)]
-                this_validation_loss = np.mean(validation_losses)
-
-                print(
-                    'epoch {}, minibatch {}/{}, validation error {}'.format(epoch,
-                                                                            minibatch_index + 1,
-                                                                            n_train_batches,
-                                                                            this_validation_loss * 100.)
-                )
-
-                if this_validation_loss < best_validation_loss:
-                    if this_validation_loss < best_validation_loss * improvement_threshold:
-                        patience = max(patience, global_iter_num * patience_increase)
-
-                    best_validation_loss = this_validation_loss
-
             global_iter_num += 1
+            if minibatch_index % validation_frequency == 0:
+                sys.stdout.flush()
+                best_validation_loss = validate(validation_step,
+                                                best_validation_loss,
+                                                epoch,
+                                                minibatch_index,
+                                                n_valid_batches,
+                                                global_iter_num)
 
+        print('done epoch {}. Elapsed time: {:.3f}'.format(epoch, timeit.default_timer() - start_time))
+        print('best validation score for epoch was: {}'.format(best_validation_loss * 100))
+
+    # after we've gone through all the samples once, check against the validation set.
     end_time = timeit.default_timer()
     print(
         'Optimization complete with best validation score of {}'.format(best_validation_loss * 100.)
     )
     elapsed = end_time - start_time
     print('The code ran for {} epochs, with {} epochs / sec'.format(epoch, 1. * epoch / elapsed))
+    print('Total run time was: {:.3f} seconds'.format(elapsed))
+
+
+def validate(validation_step,
+             best_validation_loss,
+             epoch,
+             minibatch_index,
+             n_valid_batches,
+             global_iter_num):
+
+    improvement_threshold = 0.995
+
+    validation_losses = [validation_step(i) for i in range(n_valid_batches)]
+    this_validation_loss = np.mean(validation_losses)
+
+    print(
+        'epoch {}, minibatch {}, validation error {}'.format(epoch,
+                                                             minibatch_index,
+                                                             this_validation_loss * 100.)
+    )
+
+    # if there has been an improvement in the best validation loss score, we record it.
+    if this_validation_loss < best_validation_loss:
+        validation_loss_improvement = best_validation_loss * improvement_threshold - this_validation_loss
+        if 0 < validation_loss_improvement < np.inf:
+            print('Improved validation loss: {}'.format(validation_loss_improvement))
+
+        best_validation_loss = this_validation_loss
+
+    return best_validation_loss
 
 
 def main(argv):
@@ -324,7 +341,8 @@ def main(argv):
                 valid_set_x=datasets[1][0],
                 valid_set_y=datasets[1][1],
                 x=x,
-                y=y)
+                y=y,
+                n_epochs=argv.n_epochs)
     else:
         sgd_optimization(classifier=clf,
                          cost=cost,
@@ -333,7 +351,8 @@ def main(argv):
                          valid_set_x=datasets[1][0],
                          valid_set_y=datasets[1][1],
                          x=x,
-                         y=y)
+                         y=y,
+                         n_epochs=argv.n_epochs)
 
 
 if __name__ == '__main__':
@@ -343,9 +362,8 @@ if __name__ == '__main__':
     parser.add_argument('--valid_size', default=0.1, type=float)
     parser.add_argument('--n_epochs', default=2000, type=int)
     parser.add_argument('--classifier', default='LR', choices={'LR', 'MLP'})
-    parser.add_argument('--n_hidden', default=500, type=int)
+    parser.add_argument('--n_hidden', default=600, type=int)
     parser.add_argument('--adv', action='store_true')
-    parser.add_argument('--patience', default=5000, type=int)
     parser.add_argument('--normalize', action='store_true')
 
     args = parser.parse_args()
