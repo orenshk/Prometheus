@@ -244,8 +244,8 @@ def do_training(training_step, training_step_args, validation_step, n_epochs, n_
 
     best_validation_loss = np.inf
     best_validation_losses = []
-    best_validation_life = 11
-    improvement_threshold = best_validation_life * 1e3
+    best_validation_life = 21
+    improvement_threshold = best_validation_life * 1e-3
 
     start_time = timeit.default_timer()
 
@@ -275,6 +275,7 @@ def do_training(training_step, training_step_args, validation_step, n_epochs, n_
         if len(best_validation_losses) == best_validation_life:
             if np.all(np.diff(best_validation_losses) <= improvement_threshold):
                 print('no improvement for the last {} epochs. Stopping.'.format(best_validation_life))
+                print('{}'.format(best_validation_losses))
                 break
             else:
                 best_validation_losses = best_validation_losses[1:]
@@ -295,8 +296,6 @@ def validate(validation_step,
              n_valid_batches,
              global_iter_num):
 
-    improvement_threshold = 0.995
-
     validation_losses = [validation_step(i) for i in range(n_valid_batches)]
     this_validation_loss = np.mean(validation_losses)
 
@@ -308,7 +307,7 @@ def validate(validation_step,
 
     # if there has been an improvement in the best validation loss score, we record it.
     if this_validation_loss < best_validation_loss:
-        validation_loss_improvement = best_validation_loss * improvement_threshold - this_validation_loss
+        validation_loss_improvement = best_validation_loss - this_validation_loss
         if 0 < validation_loss_improvement < np.inf:
             print('Improved validation loss: {}'.format(validation_loss_improvement))
 
